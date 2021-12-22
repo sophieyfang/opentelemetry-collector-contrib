@@ -19,12 +19,15 @@ package googlecloudexporter // import "github.com/open-telemetry/opentelemetry-c
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	cloudtrace "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	agentmetricspb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1"
 	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/model/pdata"
@@ -69,12 +72,17 @@ func generateClientOptions(cfg *Config) ([]option.ClientOption, error) {
 	}
 	if cfg.Endpoint != "" {
 		if cfg.UseInsecure {
+			// Register views to collect data.
+			if err := view.Register(ocgrpc.DefaultClientViews...); err != nil {
+				log.Fatal(err)
+			}
 			// option.WithGRPCConn option takes precedent over all other supplied options so the
 			// following user agent will be used by both exporters if we reach this branch
 			var dialOpts []grpc.DialOption
 			if cfg.UserAgent != "" {
 				dialOpts = append(dialOpts, grpc.WithUserAgent(cfg.UserAgent))
 			}
+			dialOpts = append(dialOpts, grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 			conn, err := grpc.Dial(cfg.Endpoint, append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))...)
 			if err != nil {
 				return nil, fmt.Errorf("cannot configure grpc conn: %w", err)
